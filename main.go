@@ -1,63 +1,137 @@
 package main
 
 import (
-	"encoding/json"
+	"database/sql"
 	"fmt"
-	"github.com/gorilla/mux"
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
+	"html/template"
 	"log"
 	"net/http"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
+// Database connection string
+const dsn = "root:1234@tcp(127.0.0.1:3306)/userdb?charset=utf8mb4&parseTime=True&loc=Local"
+
+// Struct for a Record
 type User struct {
-	Id    uint   `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Age   int    `json:"age"`
+	ID    int
+	Name  string
+	Email string
 }
 
-var db *gorm.DB
-var err error
-
-var PORT = ":8080"
+var db *sql.DB
+var tmpl *template.Template
 
 func init() {
-	dns := "root:1234@tcp(localhost:3306)/userdb?charset=utf8mb4&parseTime=True&loc=Local"
-	db, err := gorm.Open(mysql.Open(dns), &gorm.Config{})
+	// Initialize templates
+	tmpl = template.Must(template.ParseGlob("templates/*.html"))
+
+	// Open database connection
+	var err error
+	db, err = sql.Open("mysql", dsn)
 	if err != nil {
-		log.Fatalf("Error connecting to database %v", err)
+		log.Fatal("Failed to connect to database:", err)
 	}
-	db.AutoMigrate(User{})
-	fmt.Print("Connected to database successfully")
+
+	// Test database connection
+	if err = db.Ping(); err != nil {
+		log.Fatal("Database is unreachable:", err)
+	}
 }
 
 func main() {
-	fmt.Println("Hello, World")
-	r := mux.NewRouter()
+	http.HandleFunc("/", listUsers)
+	http.HandleFunc("/create", createUser)
+	http.HandleFunc("/save", saveUser)
+	http.HandleFunc("/edit", editUser)
+	http.HandleFunc("/update", updateUser)
+	http.HandleFunc("/delete", deleteUser)
 
-	// routers
-	r.HandleFunc("/api/users", CreateUser).Methods("POST")
+	// Serve static files (CSS, JS, etc.)
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
-	r.PathPrefix("/").Handler(http.StripPrefix("/", http.FileServer(http.Dir("./static/"))))
-
-	fmt.Println("Starting server on port 8080")
-	log.Fatal(http.ListenAndServe(PORT, r))
-
+	fmt.Println("Server is running on http://localhost:8080")
+	http.ListenAndServe(":8080", nil)
 }
 
-// CreateUsers
-func CreateUser(w http.ResponseWriter, r *http.Request) {
-	var user User
-	err := json.NewDecoder(r.Body).Decode(&user)
+func listUsers(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query("SELECT id, name, email FROM users")
 	if err != nil {
-		http.Error(w, "Error reading body", http.StatusBadRequest)
+		http.Error(w, "Failed to fetch users", http.StatusInternalServerError)
+		return
 	}
-	if err := db.Create(&user).Error; err != nil {
-		http.Error(w, "Faild to create user", http.StatusInternalServerError)
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var user User
+		if err := rows.Scan(&user.ID, &user.Name, &user.Email); err != nil {
+			http.Error(w, "Failed to read user", http.StatusInternalServerError)
+			return
+		}
+		users = append(users, user)
+	}
+
+	tmpl.ExecuteTemplate(w, "index.html", users)
+}
+
+func createUser(w http.ResponseWriter, r *http.Request) {
+	tmpl.ExecuteTemplate(w, "create.html", nil)
+}
+
+func saveUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		name := r.FormValue("name")
+		email := r.FormValue("email")
+
+		_, err := db.Exec("INSERT INTO users (name, email) VALUES (?, ?)", name, email)
+		if err != nil {
+			http.Error(w, "Failed to save user", http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+}
+
+func editUser(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	row := db.QueryRow("SELECT id, name, email FROM users WHERE id = ?", id)
+
+	var user User
+	if err := row.Scan(&user.ID, &user.Name, &user.Email); err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(user)
+	tmpl.ExecuteTemplate(w, "update.html", user)
+}
+
+func updateUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		id := r.FormValue("id")
+		name := r.FormValue("name")
+		email := r.FormValue("email")
+
+		_, err := db.Exec("UPDATE users SET name = ?, email = ? WHERE id = ?", name, email, id)
+		if err != nil {
+			http.Error(w, "Failed to update user", http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+}
+
+func deleteUser(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+
+	_, err := db.Exec("DELETE FROM users WHERE id = ?", id)
+	if err != nil {
+		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+     <title>Update User</title>
+</head>
+
+<body>
+     <h1>Update User</h1>
+     <form action="/update" method="post">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <label>Name:</label>
+          <input type="text" name="name" value="{{.Name}}" required>
+          <br>
+          <label>Email:</label>
+          <input type="email" name="email" value="{{.Email}}" required>
+          <br>
+          <button type="submit">Update</button>
+     </form>
+</body>
+
+</html>
