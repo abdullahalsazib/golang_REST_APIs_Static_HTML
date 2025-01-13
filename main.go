@@ -13,7 +13,6 @@ import (
 // Database connection string
 const dsn = "root:1234@tcp(127.0.0.1:3306)/userdb?charset=utf8mb4&parseTime=True&loc=Local"
 
-// Struct for a Record
 type User struct {
 	ID    int
 	Name  string
@@ -24,20 +23,21 @@ var db *sql.DB
 var tmpl *template.Template
 
 func init() {
-	// Initialize templates
 	tmpl = template.Must(template.ParseGlob("templates/*.html"))
-
+	log.Println("Database processing...")
 	// Open database connection
 	var err error
 	db, err = sql.Open("mysql", dsn)
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
+	log.Fatalln("Database connecting...")
 
 	// Test database connection
 	if err = db.Ping(); err != nil {
 		log.Fatal("Database is unreachable:", err)
 	}
+	log.Println("Database connected successfully")
 }
 
 func main() {
@@ -48,7 +48,6 @@ func main() {
 	http.HandleFunc("/update", updateUser)
 	http.HandleFunc("/delete", deleteUser)
 
-	// Serve static files (CSS, JS, etc.)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	fmt.Println("Server is running on http://localhost:8080")
